@@ -123,9 +123,11 @@ PosController PC;
 PosOL_TypeDef posOL;
 PosCL_TypeDef posCL;
 PosPoints posPts;
+console C;
 
 //for testing strength of GB
 Dbg_multiStroke Dbg_multiStrk;
+
 
 PID_Typedef PIDpos;
 
@@ -135,8 +137,6 @@ uint16_t ADC1_buff[2]={0,2008},ADC2_buff[2];
 //CAN variables here
 FDCAN_RxHeaderTypeDef   RxHeader;
 uint8_t               RxData[16];
-
-float GB_Calib[300];
 
 /* USER CODE END PV */
 
@@ -195,8 +195,6 @@ uint8_t dbg = 0;
 
 uint8_t enable_overRideLiftLimitError = 0;
 uint8_t disable_overRideLiftLimitError = 0;
-uint8_t overRideLiftError = 0;
-uint8_t GB_outOfBounds = 0;
 
 uint8_t motThermErrorFilter = 0;
 uint8_t mosfetThermErrorFilter = 0;
@@ -205,8 +203,8 @@ uint8_t dbg_do_multiStroke_run;
 uint8_t dbg_stop_multiStroke_run;
 
 //debug correction
-float deltaGB_correction = 0;
-int GBCorrection_previousDist = 0;
+float console_EncPosCurrentDistance=0;
+float console_GBPosCurrentDistance=0;
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
@@ -222,7 +220,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 					sixSectorCommutateCCW(&sixSectorObj,0,500);}
 			}
 			else{
-				if (S.motorState != CALIBRATION_STATE){
+				if ((S.motorState != CALIBRATION_STATE)&&(S.motorState != CONFIG_STATE)){
 					TurnOffAllChannels();}
 			}
 		} // closes ErrorFlag = 0;
@@ -256,8 +254,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 					StopSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj);
 					ResetLiftRampDuty(&liftRampDuty);
 					posOL_ClearMove(&posOL);
-					if ((S.motorState == HOMING_STATE) && (S.recievedStopCommand == 0)){
-						FDCAN_HomingDone(S.CAN_ID,HOMING_DONE);//send FD can over msg
+					if ((S.motorState == HOMING_STATE)&& (S.recievedStopCommand == 0)){
+						S.waitTillZeroSpeed = 1;
+						S.checkHomingPosAgain = 1;
 					}
 					if ((LRM.runType == DIAGNOSIS_RUN) && (S.recievedStopCommand == 0)){
 						FDCAN_sendDiagDoneFrame();
@@ -357,18 +356,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 			R.IntegralTerm = PIDpos.Ki_term;
 			R.feedforwardTerm = PIDpos.feedForwardTerm;
 			R.startOffsetTerm = PIDpos.startOffsetTerm;
+		}
 
-			//Debug for testing GearBoxes
-			//note down a delta val btw the two readings from 0-300.
-			if (abs((int)PC.currentDist - GBCorrection_previousDist) == 1){
-				deltaGB_correction = posCL.GBPoscurrentMoveDist_mm-posCL.encPoscurrentMoveDist_mm;
-				GBCorrection_previousDist = (int)PC.currentDist;
+		if (C.logging == 1){
+			if ((encSpeed.zeroSpeed == 1) && (T.tim16_oneSecTimer > 3)){
+				C.logging = 0;
 			}
-			sprintf(UART_buffer,"D:%05.02f,%03.0f,%03d,%4.2f,%6.2f,%6.2f,%6.2f,%6.2f,%7.2f,%5.2f,%5.2f,%5.2f:E\r\n",
-					posCL.moveDist_mm,posCL.moveTime,T.tim16_oneSecTimer,encPos.strokeVelocity_mm_sec,
-					PC.currentDist,posCL.GBPoscurrentMoveDist_mm,posCL.encPoscurrentMoveDist_mm,
-					posCL.GB_absCurrentPosition,encPos.absPosition,posCL.PID_positioningErr,encPos.error_with_GB_deltaPos,deltaGB_correction);
-			HAL_UART_Transmit_IT(&huart3,(uint8_t *)UART_buffer,79);
+			if (C.runningCL == 1){
+				console_EncPosCurrentDistance = posCL.encPoscurrentMoveDist_mm;
+				console_GBPosCurrentDistance = posCL.GBPoscurrentMoveDist_mm;
+			}else if(C.runningOL == 1){
+				console_EncPosCurrentDistance = posOL.encPoscurrentMoveDist_mm;
+				console_GBPosCurrentDistance = posOL.GBPoscurrentMoveDist_mm;
+			}
+			//Time.strokeVelocity,targetDist,EncActualDist,Error,GB_ActualDist,GBAbsPos,EncAbsPos,duty,Current,liftRPM
+			sprintf(UART_buffer,"D:%03d,%4.2f,%6.2f,%6.2f,%7.2f,%6.2f,%7.2f,%7.2f,%04d,%4.2f,%04d:E\r\n",
+					T.tim16_oneSecTimer,encPos.strokeVelocity_mm_sec,
+					PC.currentDist,console_EncPosCurrentDistance,posCL.PID_positioningErr,
+					console_GBPosCurrentDistance,GB.absPosition,encPos.absPosition,
+					R.appliedDuty,R.currentAmps,R.presentRPM);
+			HAL_UART_Transmit_IT(&huart3,(uint8_t *)UART_buffer,74);
 		}
 
 		if(sixSectorCntrl_Obj.turnOn == 1){
@@ -387,11 +394,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		}
 	}
 
+	//TODO : since the GB position has maximum error at the top, this LOB is not safe at the top.
+	// so we should run the calibration one time and note down the delta between the GB and enc Pos , especially
+	// at 280mm, save that value and then put that delta value in here for this to be safe. should store that
+	//value in the eeprom
 	if (htim->Instance==TIM17){ //100 ms timer. Use this to check the encoder State
 		if (GB.firstReading == 0){
-			GB_outOfBounds= checkWithinLeadScrewLimits(&posPts,GB.PWM_cnts);
-			if (overRideLiftError == 0){
-				if (GB_outOfBounds == 1){
+			GB.outOfBounds= checkWithinLeadScrewLimits(&posPts,GB.PWM_cnts);
+			if (GB.overRideBounds == 0){
+				if (GB.outOfBounds == 1){
 					TurnOffAllChannels();
 					HAL_TIM_Base_Stop_IT(&htim17);
 					E.errorFlag=E.liftOutOfBoundsError= 1;
@@ -451,8 +462,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 	  R.prevcurrentAmps=R.currentAmps;
 	  R.FETtemp=get_MOSFET_temperature(ADC2_buff[1]);
 
-	  if(R.FETtemp>110 && E.fetOvertemperature==0 )
-	  {
+	  if(R.FETtemp>110 && E.fetOvertemperature==0 ){
 		  E.fetOvertemperature=E.errorFlag=1;
 		  R.motorError|=1<<ERR_FOT_SHIFT;
 	  }
@@ -522,12 +532,11 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-	if (S.motorState == IDLE_STATE){
+	if ((S.motorState == IDLE_STATE)||(S.motorState == ERROR_STATE)){
 		if((start_string[0]=='$')&&(start_string[1]=='$')&&(start_string[2]=='$')){
 			configuration_mode_flg=1;
 			start_string[0]=start_string[1]=start_string[2]=0;
-		}
-		else{
+		}else{
 			HAL_UART_Receive_IT(&huart3, start_string, 3);
 		}
 	}
@@ -656,6 +665,7 @@ int main(void)
   }
   //setup.eepromMotorValsGood = 1;
 
+  //TODO : startoffset cant be anything other than 0 right now. FIX
   //setup.eepromPWMValsGood = 0;
   if (setup.eepromPWMValsGood == 0){
 	  sV.Kp = 135;
@@ -666,7 +676,8 @@ int main(void)
 	  setup.defaults_eepromWriteFailed += writePWMSettingsToEEPROM(&sV);
   }
   //setup PID with the correct Settings.
-  setupPID_LiftMotors(&PIDpos,135,1,67,100);//Kp,Ki,FF%,startoffset
+  //TODO figure out what to do with start Offset
+  setupPID_LiftMotors(&PIDpos,sV.Kp,sV.Ki,sV.ff_percent,sV.start_offset);//Kp,Ki,FF%,startoffset
 
   //Now setup the Encoder.Use whatever value you got from the eeprom, even if its bad.
   setup.encoderSetupOK = setupMotorEncoder_inABI_Mode(); //setup ABI mode without PWM
@@ -755,13 +766,27 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  //Wait till CAN PING is done.
-	  //send all Error MSgs once here.
-	  if ((E.errorFlag == 1) && (S.errorMsgSentOnce == 0)){
+
+	  //send all Error MSgs every 1 sec here
+	  if (E.errorFlag == 1){
 		  S.motorState = ERROR_STATE;
-		  FDCAN_errorFromMotor();
 		  LRM.controlType = 0; // stop control loops
-		  S.errorMsgSentOnce = 1;
+		  if (S.errorMsgSentOnce == 0){
+			  FDCAN_errorFromMotor();
+			  sprintf(UART_buffer,"Error!ErrorReason = %05d\r\n",R.motorError);
+			  HAL_UART_Transmit_IT(&huart3,(uint8_t *)UART_buffer,27);
+			  S.errorMsgSentOnce = 1;
+		  }
+		  // go inside the console and do things
+		  //like come out of lob mode, and reset motor
+		  if(configuration_mode_flg){
+			  S.motorState = CONFIG_STATE;
+			  configurationFromTerminal(); // BLOCKING
+			  configuration_mode_flg=0;
+			  HAL_UART_Receive_IT(&huart3, start_string, 3);
+			  S.motorState = IDLE_STATE;
+		  }
+
 	  }
 
 
@@ -799,16 +824,10 @@ int main(void)
 
 	  }
 
- 	  /*HAL_GPIO_TogglePin(GPIOC,LED1_Pin);
-	  HAL_Delay(100);
-	  HAL_GPIO_TogglePin(GPIOC,LED2_Pin);
-	  HAL_Delay(100);
-	  HAL_GPIO_TogglePin(GPIOC,LED3_Pin);
-	  HAL_Delay(100);*/
 
 	  //AUTO RESET this?
 	  if (enable_overRideLiftLimitError){
-		  overRideLiftError = 1;
+		  GB.overRideBounds = 1;
 		  E.liftOutOfBoundsError = 0;
 		  E.errorFlag=0;
 		  R.motorError = 0;
@@ -817,7 +836,7 @@ int main(void)
 		  enable_overRideLiftLimitError = 0;
 	  }
 	  if (disable_overRideLiftLimitError){
-		  overRideLiftError = 0;
+		  GB.overRideBounds = 0;
 		  disable_overRideLiftLimitError = 0;
 	  }
 
@@ -980,7 +999,6 @@ int main(void)
 		  }else{
 			  encPos_ZeroAbsPosition(&encPos,GB.absPosition);
 		  }
-
 		  dbg_homing_start = 0;
 	  }
 
@@ -1002,9 +1020,7 @@ int main(void)
 		  dbg_posOL_stop =0;
 	  }
 
-
 	  //MAIN CONTROL FUNCTIONS FROM CAN COMMANDS
-
 	  // --------------- START AFTER A DIAGNOSTICS FRAME-------------------
 	  if ((S.CAN_MSG == START) && (LRM.runType == DIAGNOSIS_RUN)){
 		  if (S.RM_state == RECEIVED_RAMP_SETTINGS){
@@ -2075,7 +2091,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 2000000;
+  huart3.Init.BaudRate = 115200;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;

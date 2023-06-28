@@ -169,3 +169,70 @@ void RunCalibration(void){
 }
 
 
+
+uint16_t RunCalibrationWithPrintf(void){
+	setupCalibration(10,50);
+	encCalib.pv_Axis = 0;
+
+	for (int i=0;i<30; i++){
+		printf("\r\n step %02d",i);
+		encCalib.pv_Axis += 1;
+
+		if (encCalib.pv_Axis > 6){
+		  encCalib.pv_Axis = 1;
+		}
+
+		voltageOnPrincipalAxis(&encCalib,encCalib.pv_Axis);
+		HAL_Delay(1000); // long delay for vibrations to settle.
+		encCalib.angleReading[i] =  GetAveragedAngleReading(5);
+
+		if (i == 0){
+			encCalib.first_reading = encCalib.angleReading[i];
+			encCalib.dAngle[i] = 0;
+			encCalib.deltaError[i] = 0;
+		  }
+		else{
+			encCalib.dAngle[i]  = encCalib.angleReading[i]- encCalib.previousAngle;
+			if (encCalib.dAngle[i]  < 0){
+				encCalib.dAngle[i]  = 16384 - encCalib.previousAngle + encCalib.angleReading[i];
+			}
+			encCalib.deltaError[i] = encCalib.dAngle[i] - ENC_COUNTS_60_ELEC_DEGREES;
+		}
+
+		encCalib.previousAngle = encCalib.angleReading[i];
+
+		if (encCalib.deltaError[i] > encCalib.maxError){
+			encCalib.maxError = encCalib.deltaError[i];
+		}
+
+	    if (encCalib.deltaError[i] < encCalib.minError){
+	    	encCalib.minError = encCalib.deltaError[i];
+	    }
+	}
+
+
+	encCalib.avgError = (encCalib.maxError + encCalib.minError)/2;
+	encCalib.encIndex = encCalib.first_reading + encCalib.avgError;
+	if (encCalib.encIndex < 0){
+		encCalib.encIndex = 16384 + encCalib.encIndex;
+	}
+	if (encCalib.encIndex > 16384){
+		encCalib.encIndex = encCalib.encIndex - 16384;
+	}
+	encCalib.encIndex_wOffset = encCalib.encIndex + EMPIRICAL_OFFSET;
+	if (encCalib.encIndex_wOffset < 0){
+		encCalib.encIndex_wOffset = 16384 + encCalib.encIndex_wOffset;
+	}
+	if (encCalib.encIndex_wOffset > 16384){
+		encCalib.encIndex_wOffset = encCalib.encIndex_wOffset - 16384;
+	}
+
+	printf("\r\n avgError %05d",encCalib.avgError);
+	printf("\r\n encIndex %05d",encCalib.encIndex);
+	printf("\r\n encIndex_wOffset %05d",encCalib.encIndex_wOffset);
+
+	TurnOffAllChannels();
+
+	return encCalib.encIndex_wOffset;
+}
+

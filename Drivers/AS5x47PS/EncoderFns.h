@@ -8,6 +8,8 @@
 #ifndef ENCODERFNS_H_
 #define ENCODERFNS_H_
 
+#include "AS5x47P.h"
+
 #define SPI_RDNG_TO_MECH_ANGLE 0.0220 // (360/16384)
 #define SPI_RDNG_TO_ENC_CNT  0.125 // (2048/16384 = 0.122)
 #define ENC_CNT_TO_MECH_ANGLE 0.1758  // (360/2048)

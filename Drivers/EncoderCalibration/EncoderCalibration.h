@@ -39,6 +39,7 @@ void TurnOffAllPhases(void);
 void voltageOnPrincipalAxis(EncCalib_TypeDef *encC,uint8_t axis);
 void InitializeEncoderCalib_TypeDef(EncCalib_TypeDef *encC);
 void RunCalibration(void);
+uint16_t RunCalibrationWithPrintf(void);
 
 extern EncCalib_TypeDef encCalib;
 

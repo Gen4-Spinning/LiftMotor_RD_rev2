@@ -45,6 +45,45 @@ uint8_t writePWMSettingsToEEPROM(settingVar *stV)
     	return 0;}
 }
 
+uint8_t writePWMSettingsToEEPROM_Manual(float Kp, float Ki,int ff_percent, int start_offset)
+{
+	uint8_t dataWritten = 0;
+	uint8_t target = 4;
+
+	if (Kp != -1){
+		dataWritten += EE_WriteFloat(Kp,Kp_ADDRESS);
+		HAL_Delay(1);
+	}else{
+		target -= 1;
+	}
+
+	if (Ki != -1){
+		dataWritten += EE_WriteFloat(Ki,Ki_ADDRESS);
+		HAL_Delay(1);
+	}else {
+		target -= 1;
+	}
+
+	if (start_offset != -1){
+		dataWritten += EE_WriteInteger(start_offset,START_OFFSET_ADDRESS);
+		HAL_Delay(1);
+	}else{
+		target -= 1;
+	}
+
+	if (ff_percent != -1){
+		dataWritten += EE_WriteInteger(ff_percent,FEED_FORWARD_FACTOR_ADDRESS);
+		HAL_Delay(1);
+	}else{
+		target -= 1;
+	}
+
+    if (dataWritten == target)
+    	{return 1;}
+    else{
+    	return 0;}
+}
+
 uint8_t writeMotorSettingsToEEPROM_Manual(int8_t motorID, int16_t AMS_offset,int16_t default_direction){
 	uint8_t dataWritten = 0;
 	uint8_t target = 3;

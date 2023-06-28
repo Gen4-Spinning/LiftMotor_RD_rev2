@@ -33,6 +33,8 @@ typedef struct PositioningOpenLoop_struct {
 
 } PosOL_TypeDef;
 
+extern PosOL_TypeDef posOL;
+
 void posOL_Reset(PosOL_TypeDef *p);
 void posOL_SetupMove(PosOL_TypeDef *p,float startPosition,float moveDist,uint8_t moveDir,uint16_t moveDuty);
 void posOL_ClearMove(PosOL_TypeDef *p);

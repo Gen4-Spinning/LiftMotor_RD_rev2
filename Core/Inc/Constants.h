@@ -33,6 +33,7 @@
 #define NORMAL_RUN 1
 #define DIAGNOSIS_RUN 2
 #define LOCAL_DEBUG 3
+#define CONSOLE_DEBUG 4
 
 
 //constants for ensuring we have updated RM struct before we send the Start/changeTarget commands

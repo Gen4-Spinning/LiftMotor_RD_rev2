@@ -212,10 +212,11 @@ void SysTick_Handler(void)
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
   if (S.motorState == ERROR_STATE){
+	  error_ms_counter ++;
   	  if (error_ms_counter >= 1000){
   		  HAL_GPIO_TogglePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin);
   		  error_ms_counter = 0;
-  		 S.errorMsgSentOnce = 0; // to make the msg get sent continuously
+  		  S.errorMsgSentOnce = 0; // to make the msg get sent continuously
   	  }
     }
   GB.msTimer ++;

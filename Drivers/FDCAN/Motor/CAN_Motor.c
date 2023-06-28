@@ -87,8 +87,12 @@ void FDCAN_errorFromMotor(void)
 	TxHeader.DataLength = FDCAN_DLC_BYTES_2;
 	TxData[0]=(R.motorError)>>8;
 	TxData[1]=(R.motorError);
-	while(HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1)==0);
-	HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData);
+	//while(HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1)==0);
+	//Above line blocks when no CAN connection is there, so prevents lob error resolution with the serial port
+	//instead we send a msg if there is any free space.
+	if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1)>0){
+		HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData);
+	}
 }
 
 void FDCAN_parseForMotor(uint8_t my_address)

@@ -35,7 +35,7 @@ void setupPID(PID_Typedef *p,float Kp,float Ki,uint16_t FF_Percent,uint16_t so){
 void setupPID_LiftMotors(PID_Typedef *p,float Kp,float Ki,uint16_t FF_Percent,uint16_t so){
 	p->FF_percent = FF_Percent;
 	// max Velocity for the lift is 5.8/sec(see Roving width = 3, and Flyer RPM = 850, see Flyer excel).
-	//that velocity becomes 100% duty cycle, ie 1500. So, (velocity/6) * 1500 * FFpercent/100 = FFduty
+	//that velocity becomes 100% duty cycle, ie 1500. So, (velocity/(~6)) * 1500 * FFpercent/100 = FFduty
 	p->FF_constant = ((float)(p->FF_percent) * 2.5 );
 	p->Ki_constant = Ki;
 	p->Kp_constant = Kp;
@@ -78,6 +78,8 @@ void ExecPID_PosLift(PID_Typedef *p, PosController *PC,PosCL_TypeDef *posCL){
 
 	p->pwm = p->feedForwardTerm + (int16_t)p->Kp_term + (int16_t)p->Ki_term + p->startOffsetTerm;
 
+	//TODO : think about this -> as soon as you start, start decreasing start offset within this loop
+	//only.
 	if (p->pwm > MAX_PWM){
 		p->pwm = MAX_PWM;
 	}

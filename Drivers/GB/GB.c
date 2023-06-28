@@ -79,8 +79,17 @@ void CalculateGB_deltaPosition(GB_TypeDef *gb){
 	gb->prevAbsPosition = gb->absPosition;
 }
 
-
-
-
+//Debug for testing GearBoxes
+//note down a delta val btw the two readings from 0-300.
+/*if (abs((int)PC.currentDist - GBCorrection_previousDist) == 1){
+	deltaGB_correction = posCL.GBPoscurrentMoveDist_mm-posCL.encPoscurrentMoveDist_mm;
+	GBCorrection_previousDist = (int)PC.currentDist;
+}
+sprintf(UART_buffer,"D:%05.02f,%03.0f,%03d,%4.2f,%6.2f,%6.2f,%6.2f,%6.2f,%7.2f,%5.2f,%5.2f,%5.2f:E\r\n",
+		posCL.moveDist_mm,posCL.moveTime,T.tim16_oneSecTimer,encPos.strokeVelocity_mm_sec,
+		PC.currentDist,posCL.GBPoscurrentMoveDist_mm,posCL.encPoscurrentMoveDist_mm,
+		posCL.GB_absCurrentPosition,encPos.absPosition,posCL.PID_positioningErr,encPos.error_with_GB_deltaPos,deltaGB_correction);
+HAL_UART_Transmit_IT(&huart3,(uint8_t *)UART_buffer,79);
+*/
 
 

@@ -60,6 +60,9 @@ typedef struct GB_struct {
 	char MB_request;  // mainboard Request. only valid in IDLE state
 	char MB_requestTimer;
 
+	char outOfBounds;
+	char overRideBounds;
+
 } GB_TypeDef;
 
 extern GB_TypeDef GB;

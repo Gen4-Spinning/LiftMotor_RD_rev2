@@ -1,6 +1,10 @@
 #include "main.h"
 #include <stdint.h>
 #include <stdbool.h>
+
+
+#ifndef AS5x47P_H_
+#define AS5x47P_H_
 //start private variables
 
 //Registers declaration 
@@ -196,4 +200,6 @@ uint16_t getProgrammedZeroOffset(void);
 
 //uint16_t GetAveragedAngleReading(void);
 uint16_t GetAveragedAngleReading(uint16_t rdngs);
+
+#endif
 
