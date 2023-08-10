@@ -7,7 +7,7 @@
 
 
 #include "PosCntl.h"
-
+#include "math.h"
 void PC_ExecVelocity(PosController *pc){
 	/* from velocity Ramp Up go to ramp cruise when pk Velocity is reached
 	 * in velocity cruise go to next state based on distance,
@@ -81,7 +81,7 @@ void PC_ExecVelocity(PosController *pc){
 void PC_ExecTime(PosController *pc){
 	if (pc->pV.velocity_state != VELOCITY_ZERO){
 		pc->currentTime += pc->callingTimeSec_Const;
-		pc->remainingTime = pc->strokeTotalTime - pc->currentTime;
+		pc->remainingTime -= pc->callingTimeSec_Const;
 	}
 }
 
@@ -164,7 +164,6 @@ void PC_Reset(PosController *pc){
 	pc->currentVelocity=0;
 
 	pc->remainingDist=0;
-	pc->remainingTime=0;
 
 	pc->overallState = STROKE_IDLE;
 	pc->pV.velocity_state = VELOCITY_ZERO;
@@ -198,7 +197,6 @@ void PC_SetupMove(PosController *p,float targetDistance, float targetTime,uint8_
 	 * of the speeds. The position loop will choose the correct dV to use.
 	 * If its end of cruise, it will use velocity change layer
 	 * if its during a cruise and gets a ramp down command it will choose velocuty ramp down.
-	 *
 	 * Ramp up will always be velocity rampUp.
 	 */
 	p->strokeTotalDist = targetDistance;
@@ -234,7 +232,6 @@ void PC_SetupMove(PosController *p,float targetDistance, float targetTime,uint8_
 	p->pS.endDist_total = p->strokeTotalDist;
 
 }
-
 
 void PC_SetupInterruptedRDMove(PosController *p){
 	/* we need to go up to the interrupted velocity and then just ramp down at the same ramp rate as
@@ -273,4 +270,39 @@ void PC_Start_NewLayer(PosController *p){
 void PC_ResumeInterruption(PosController *p){
 	p->overallState = STROKE_RUNNING;
 	p->pV.velocity_state = VELOCITY_INTERRUPTION_RESUME;
+}
+
+
+float remainingdV;
+float approxTime;
+float approxDist;
+float accel;
+void PC_CalculateCurrentStrokeTime(PosController *p,uint8_t caseType,float resumeAfterStopDist){
+	float dist_cruise = 0;
+	if (caseType == FULL_STROKE_WITH_SLOW_RAMPUP){
+		dist_cruise = p->strokeTotalDist - p->pS.dist_RU; //forget the RD, or correct for it some other day-
+		p->currentStrokeTime = p->rampUpTime_ms/1000 + dist_cruise/p->strokePkVelocity;
+	}else if (caseType == FULL_STROKE_WITH_FAST_RAMPUP){
+		dist_cruise = p->strokeTotalDist - p->pS.dist_strokeRU;
+		p->currentStrokeTime = p->strokeChangeTime_ms/1000 + dist_cruise/p->strokePkVelocity;
+	}else if (caseType == FULL_STROKE_WITH_INTERRUPTED_RESUME){
+		remainingdV = p->strokePkVelocity - p->interruptedVelocity;
+		approxTime = remainingdV/p->callingTimeSec_Const; // not taking into account the strokeRU time
+		approxDist = approxTime * remainingdV; // not taking into account dis we travel in stroke RU
+		dist_cruise = p->strokeTotalDist - approxDist;
+		p->currentStrokeTime = p->strokeRUTime_ms/1000 + approxTime + dist_cruise/p->strokePkVelocity;
+	}
+	else if (caseType == RESUME_STROKE_WITH_RAMPUP){
+		// here in both cases we want the time till we reach the edge.
+		if (resumeAfterStopDist < p->pS.dist_RU){
+			accel = p->pV.dV_RU/p->callingTimeSec_Const;
+			p->currentStrokeTime = (float)sqrt((double)(resumeAfterStopDist * 2 / accel));  // s = ut + 0.5*a *t*t
+		}else{
+			dist_cruise = resumeAfterStopDist - p->pS.dist_RU;
+			p->currentStrokeTime = p->rampUpTime_ms/1000 + dist_cruise/p->strokePkVelocity;
+		}
+	}else if (caseType == RAMPDOWN_MID_STROKE){ // here we just want time to come to a stop, whether or not we touch the edge
+		p->currentStrokeTime = (p->currentVelocity/p->pV.dV_RD)*p->callingTimeSec_Const;
+	}
+	p->remainingTime = p->currentStrokeTime;
 }

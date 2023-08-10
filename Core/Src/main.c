@@ -278,7 +278,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
 		else if (LRM.controlType == CLOSED_LOOP){ 			//ClosedLoop means Pos Control
 			if (PC.overallState != STROKE_IDLE){
-				if (PC.overallState!=STROKE_OVER){
+				if (PC.overallState == STROKE_RUNNING ){
 					PC_ExecVelocity(&PC);
 					PC_ExecTime(&PC);
 					PC_ExecPosition(&PC);
@@ -291,6 +291,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 					}else{
 						ExecPID_PosLift(&PIDpos,&PC,&posCL);
 					}
+
 					CalculateGB_deltaPosition(&GB);
 					encPos_CalculateDeltaAbsPos_withGB(&encPos,GB.deltaAbsPosition,GB.absPosition);
 
@@ -298,10 +299,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 						E.errorFlag=E.liftPosTrackingError= 1;
 						R.motorError |=1<<ERR_LTE_SHIFT;
 					}
-					/*if (fabs(encPos.error_with_GB) >= 5){
-						E.errorFlag = E.liftSynchronicityError = 1;
-						R.motorError |= 1 << ERR_LSF_SHIFT;
+					//only check during velocity Cruise. otherwise speeds are too slow and its misfirin
+					/*if (PC.pV.velocity_state == VELOCITY_CRUISE){
+						if (fabs(encPos.error_with_GB_deltaSpeed) == encPos.strokeMovementMM_controlLoop){
+							encPos.errorWithGB_deltaSpeedCount ++;
+							if (encPos.errorWithGB_deltaSpeedCount >= 24){// 1 sec of running
+								E.errorFlag = E.liftSynchronicityError = 1;
+								R.motorError |= 1 << ERR_LSF_SHIFT;
+							}
+						}else{
+							encPos.errorWithGB_deltaSpeedCount = 0;
+						}
+					}else{
+						encPos.errorWithGB_deltaSpeedCount = 0;
 					}*/
+
 					sixSectorSetDuty(&sixSectorCntrl_Obj,PIDpos.pwm);
 				}else if (PC.overallState==STROKE_OVER){
 					StopSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj);
@@ -327,6 +339,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 							S.waitTillZeroSpeed = 1;
 							//local Debug restart needs to be one if you want to restart in the other direction
 						}else{}
+					}else if (S.motorState == PAUSE_STATE){ // if while pausing we reach the end of the road.
+						if ((LRM.runType == NORMAL_RUN) && (S.recievedStopCommand == 0)){
+							//sendStrokeOverMsg, but only send once RPM becomes zero.
+							S.waitTillZeroSpeed = 1;
+							S.sendStrokeOver = 1;
+						}
 					}
 
 					// even for multistroke debug we want to change direction and run only after zero speed is reached
@@ -339,6 +357,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 					//LRM.runType = NOT_RUNNING;
 					LRM.logReturn=NO_LOG;
 					S.recievedStopCommand = 0;
+				}
+				else if (PC.overallState==STROKE_PAUSED){
+					StopSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj);
+					PC_Reset(&PC);
+					posCL_ClearMove(&posCL);//DO NOT zero RemainingDistance,or
+					resetPID(&PIDpos);
+					S.motorState = IDLE_STATE;
+					LRM.logReturn=NO_LOG;
 				}
 			}
 			R.motor_state = S.motorState ;
@@ -401,6 +427,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim->Instance==TIM17){ //100 ms timer. Use this to check the encoder State
 		if (GB.firstReading == 0){
 			GB.outOfBounds= checkWithinLeadScrewLimits(&posPts,GB.PWM_cnts);
+			// MOTOR closest to VFD is giving junk data when the VFD is on, and so since we are only using during
+			//homing, Im removing this chk.During running the motor encoder is used to figure out pos
+			//TODO:figure out in office
+			GB.outOfBounds = 0;
 			if (GB.overRideBounds == 0){
 				if (GB.outOfBounds == 1){
 					TurnOffAllChannels();
@@ -886,11 +916,12 @@ int main(void)
 	  //ABI_mechAngle = getEncoderAngleFromABI(&htim2);
 	  //SPI_mechAngle = getEncoderAngleFromSPI(1);
 
-	  if (dbg){
+	  /*if (dbg){
 		  FDCAN_HomingDone(S.CAN_ID,HOMING_DONE);//send FD can over msg
 		  //AS5047_checkEncoderHealth();
 		  dbg = 0;
-	  }
+	  }*/
+
 	  //START CLOSED LOOP
 	  if (dbg_posCL_start){
 		LRM.runType = LOCAL_DEBUG;
@@ -899,13 +930,19 @@ int main(void)
 		posCL_SetupMove(&posCL,GB.absPosition,LRM.distance,LRM.direction,LRM.time);
 		posCL_SetupEncPosMove(&posCL,encPos.absPosition,LRM.distance,LRM.direction);
 		encPos_ZeroMovement(&encPos);
-		PC_SetupRampTimes(&PC,10000,10000,1000);
-		PC_SetupStrokeTimes(&PC, 2000,2000);
+
+		//PC_SetupRampTimes(&PC,10000,10000,1000);
+		//PC_SetupStrokeTimes(&PC, 2000,2000);
+
+		PC_SetupRampTimes(&PC,LRM.rampUpTime_ms,LRM.rampDownTime_ms,LRM.directionChangeRamp_ms);
+		PC_SetupStrokeTimes(&PC, LRM.directionChangeRamp_ms,LRM.directionChangeRamp_ms);
+
 		PC_SetupMove(&PC, LRM.distance, LRM.time, LRM.direction);
+		PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_SLOW_RAMPUP,ARGUMENT_UNUSED);
 		posCL_setPkVelocity(&posCL,PC.strokePkVelocity);
 		StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 		PC_Start(&PC);
-		S.localDebugRestart = 0;
+		S.localDebugRestart = 1;
 		dbg_posCL_start = 0;
 		T.tim16_20msTimer  =0;
 		T.tim16_oneSecTimer = 0;
@@ -913,6 +950,7 @@ int main(void)
 
 	  if(dbg_posCL_pause){
 		  PC.pV.velocity_state = VELOCITY_RAMPDOWN;
+		  PC_CalculateCurrentStrokeTime(&PC,RAMPDOWN_MID_STROKE,ARGUMENT_UNUSED);
 		  dbg_posCL_pause = 0;
 	  }
 
@@ -924,7 +962,11 @@ int main(void)
 		  posCL_SetupEncPosMove(&posCL,encPos.absPosition,LRM.distance,LRM.direction);
 		  encPos_ZeroMovement(&encPos);
 		  PC_Reset(&PC);
-		  PC_SetupStrokeTimes(&PC,1000,1000); // for all new layers, pause or not this is the start and end times
+
+		  //PC_SetupStrokeTimes(&PC,1000,1000); // for all new layers, pause or not this is the start and end times
+
+		  PC_SetupStrokeTimes(&PC, LRM.directionChangeRamp_ms,LRM.directionChangeRamp_ms);
+
 		  PC_SetupMove(&PC, LRM.distance, LRM.time, LRM.direction);
 		  posCL_setPkVelocity(&posCL,PC.strokePkVelocity);
 		  if (PC.interruption){
@@ -932,14 +974,18 @@ int main(void)
 				  PC_SetupInterruptedRDMove(&PC);
 			  }else if (PC.interruptionType == INTERRUPTION_RU){
 				  PC_SetupInterruptedRUMove(&PC);
+
+				  PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_INTERRUPTED_RESUME,ARGUMENT_UNUSED);
 			  }
 			  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 			  PC_ResumeInterruption(&PC);
 			  PC.interruption = 0;
 		  }else{
+			  PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_FAST_RAMPUP,ARGUMENT_UNUSED); // DONT calculate for the interruptions
 			  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 			  PC_Start_NewLayer(&PC);
 		  }
+		  S.localDebugRestart = 1; 		  // make 1 for continuous operation, otherwise only 1 cycle
 		  dbg_posCL_newLayer = 0;
 	  }
 
@@ -954,6 +1000,7 @@ int main(void)
 		  encPos_ZeroMovement(&encPos);
 		  PC_SetupMove(&PC,posCL.remainingDistance_mm,remainingTime, LRM.direction);
 		  posCL_setPkVelocity(&posCL,PC.strokePkVelocity);
+		  PC_CalculateCurrentStrokeTime(&PC,RESUME_STROKE_WITH_RAMPUP,posCL.remainingDistance_mm);
 		  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 		  PC_Start(&PC);
 		  dbg_posCL_resume = 0;
@@ -982,6 +1029,7 @@ int main(void)
 				  PC_SetupStrokeTimes(&PC, 1000,1000);
 				  PC_SetupMove(&PC, posPts.homingDistance, posPts.homingTime, posPts.homingDirection);
 
+				  PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_SLOW_RAMPUP,ARGUMENT_UNUSED);
 				  posCL_setPkVelocity(&posCL,PC.strokePkVelocity);
 				  // we need to start the six sector Obj, and then start the Ramp
 				  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,posPts.homingDirection);
@@ -1045,6 +1093,7 @@ int main(void)
 					  PC_SetupStrokeTimes(&PC, LRM.rampUpTime_ms,LRM.rampDownTime_ms);
 					  PC_SetupMove(&PC, LRM.distance, LRM.time, LRM.direction);
 					  posCL_setPkVelocity(&posCL,PC.strokePkVelocity);
+					  PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_SLOW_RAMPUP,ARGUMENT_UNUSED);
 					  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 					  PC_Start(&PC);
 				  }
@@ -1071,9 +1120,10 @@ int main(void)
 					  posCL_SetupEncPosMove(&posCL,encPos.absPosition,LRM.distance,LRM.direction);
 					  encPos_ZeroMovement(&encPos);
 					  PC_SetupRampTimes(&PC,LRM.rampUpTime_ms,LRM.rampDownTime_ms,LRM.directionChangeRamp_ms);
-					  PC_SetupStrokeTimes(&PC, LRM.rampUpTime_ms,LRM.directionChangeRamp_ms);
+					  PC_SetupStrokeTimes(&PC, LRM.directionChangeRamp_ms,LRM.directionChangeRamp_ms);
 					  PC_SetupMove(&PC, LRM.distance, LRM.time, LRM.direction);
 					  posCL_setPkVelocity(&posCL,PC.strokePkVelocity);
+					  PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_SLOW_RAMPUP,ARGUMENT_UNUSED);
 					  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 					  PC_Start(&PC);
 					  //sprintf(UART_buffer,"\r\n Start-%03.02f,%03.02f,%01d,%03.02f",LRM.distance,LRM.time,LRM.direction,posRamp.pkVelocity);
@@ -1104,6 +1154,7 @@ int main(void)
 
 			  PC_SetupMove(&PC,posCL.remainingDistance_mm,remainingTime, LRM.direction);
 			  posCL_setPkVelocity(&posCL,PC.strokePkVelocity);
+			  PC_CalculateCurrentStrokeTime(&PC,RESUME_STROKE_WITH_RAMPUP,posCL.remainingDistance_mm);
 			  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 			  PC_Start(&PC);
 			  //sprintf(UART_buffer,"\r\n Resume-%03.02f,%03.02f",posRamp.pkVelocity,posRamp.dV_RD);
@@ -1114,12 +1165,12 @@ int main(void)
 		  }//DO nothing for open Loop
 	  }
 
-
 	  //-------------------4. PAUSE FRAME ---------------------------
 	  if ((S.CAN_MSG == RAMPDOWN_STOP) && (LRM.runType == NORMAL_RUN)){
 		  S.CAN_MSG = NO_MSG;
 		  if (LRM.controlType == CLOSED_LOOP){
 			  PC.pV.velocity_state = VELOCITY_RAMPDOWN;
+			  PC_CalculateCurrentStrokeTime(&PC,RAMPDOWN_MID_STROKE,ARGUMENT_UNUSED);
 			  S.motorState = PAUSE_STATE;
 			  //sprintf(UART_buffer,"\r\n Pause-%03.02f,%03.02f",posRamp.pkVelocity,posRamp.dV_RD);
 			  //HAL_UART_Transmit_IT(&huart3,(uint8_t *)UART_buffer,21);
@@ -1144,11 +1195,13 @@ int main(void)
 					  PC_SetupInterruptedRDMove(&PC);
 				  }else if (PC.interruptionType == INTERRUPTION_RU){
 					  PC_SetupInterruptedRUMove(&PC);
+	  				  PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_INTERRUPTED_RESUME,ARGUMENT_UNUSED);
 				  }
 				  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 				  PC_ResumeInterruption(&PC);
 				  PC.interruption = 0;
 			  }else{
+	  			  PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_FAST_RAMPUP,ARGUMENT_UNUSED); // DONT calculate for the interruptions
 				  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,LRM.direction);
 				  PC_Start_NewLayer(&PC);
 			  }
@@ -1178,6 +1231,7 @@ int main(void)
 				  PC_SetupMove(&PC, posPts.homingDistance, posPts.homingTime, posPts.homingDirection);
 
 				  posCL_setPkVelocity(&posCL,PC.strokePkVelocity);
+				  PC_CalculateCurrentStrokeTime(&PC,FULL_STROKE_WITH_SLOW_RAMPUP,ARGUMENT_UNUSED);
 				  // we need to start the six sector Obj, and then start the Ramp
 				  StartSixSectorObj(&sixSectorCntrl_Obj,&sixSectorObj,posPts.homingDirection);
 				  PC_Start(&PC);

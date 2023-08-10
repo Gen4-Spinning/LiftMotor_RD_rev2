@@ -34,6 +34,14 @@
 #define INTERRUPTION_RU 1
 #define INTERRUPTION_RD 2
 
+//type of cases to calculate remaining Time
+#define FULL_STROKE_WITH_SLOW_RAMPUP 1
+#define FULL_STROKE_WITH_FAST_RAMPUP 2
+#define FULL_STROKE_WITH_INTERRUPTED_RESUME 3
+#define RESUME_STROKE_WITH_RAMPUP 4
+#define RAMPDOWN_MID_STROKE 5
+
+#define ARGUMENT_UNUSED -1
 
 typedef struct velocityStruct{
 	char velocity_state;
@@ -76,6 +84,7 @@ typedef struct posController{
 	float currentDist;
 	float currentTime;
 	float currentVelocity;
+	float currentStrokeTime;
 
 	float remainingDist;
 	float remainingTime;
@@ -115,5 +124,6 @@ void PC_ResumeInterruption(PosController *p);
 void PC_SetupInterruptedRDMove(PosController *p);
 void PC_SetupInterruptedRUMove(PosController *p);
 
+void PC_CalculateCurrentStrokeTime(PosController *p,uint8_t caseType,float resumeAfterStopDist);
 
 #endif /* POSCNTL_H_ */

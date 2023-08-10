@@ -22,6 +22,7 @@ typedef struct EncPos{
 	float strokeMovement_mm;
 	float strokeMovementMM_controlLoop;
 	float error_with_GB_deltaSpeed;
+	uint16_t errorWithGB_deltaSpeedCount;
 	float error_with_GB_deltaPos;
 	float absPosition;
 }EncPos_TypeDef;

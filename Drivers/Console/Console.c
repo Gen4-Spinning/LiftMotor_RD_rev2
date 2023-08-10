@@ -140,7 +140,7 @@ uint8_t configurePIDSettings(void){
 		else if (insidePIDLoop == 0){
 			if (noEntered == 1){
 				printf("\r\n -----Kp----");
-				printf("\r\n Current Kp value :%5.2f. Enter new Value : (0-300)",sV.Kp);
+				printf("\r\n Current Kp value :%5f. Enter new Value : (0-300)",sV.Kp);
 				minLimit = 0;
 				maxLimit = 300;
 				pidQueryNo = 1;
@@ -175,11 +175,11 @@ uint8_t configurePIDSettings(void){
 				if ((noEntered <= maxLimit ) && ( noEntered >= minLimit)){
 					if (pidQueryNo == 1){
 						Kp_new = noEntered;
-						printf("\r\n Kp = %5.2f",Kp_new);
+						printf("\r\n Kp = %5f",Kp_new);
 						newPIDquery = 1;
 					}else if (pidQueryNo == 2){
 						Ki_new = noEntered;
-						printf("\r\n Ki = %5.2f",Ki_new);
+						printf("\r\n Ki = %5f",Ki_new);
 						newPIDquery = 1;
 					}else if (pidQueryNo == 3){
 						FF_factor_new = noEntered;
@@ -200,7 +200,7 @@ uint8_t configurePIDSettings(void){
 			if (newPIDquery){
 				if(pidQueryNo == 1){
 					printf("\r\n -----Ki-----");
-					printf("\r\n Current Ki value :%5.2f. Enter new Value : (0-300)",sV.Ki);
+					printf("\r\n Current Ki value :%5f. Enter new Value : (0-300)",sV.Ki);
 					minLimit = 0;
 					maxLimit = 300;
 				}else if (pidQueryNo == 2){
@@ -216,7 +216,7 @@ uint8_t configurePIDSettings(void){
 				}
 				if (pidQueryNo == 4){
 					printf("\r\n -----All values Entered!-----");
-					printf("\r\n Kp:%5.2f, Ki:%5.2f, FF_percent:%02d, StartOffset:%03d",Kp_new,Ki_new,FF_factor_new,startOffsetNew);
+					printf("\r\n Kp:%5f, Ki:%5f, FF_percent:%02d, StartOffset:%03d",Kp_new,Ki_new,FF_factor_new,startOffsetNew);
 					printf("\r\n Write into Eeprom and enable? (1 for yes,0 for no)");
 					eepromWrite = 1;
 				}
@@ -318,6 +318,7 @@ uint8_t printSettings(void){
 			printf("\r\n MOTOR Default Dir = %d (CW=0,CCW=1)",sV.default_direction);
 			printf("\r\n Kp:%5.2f, Ki:%5.2f, FF_percent:%02d, StartOffset:%03d",sV.Kp,sV.Ki,sV.ff_percent,sV.start_offset);
 			printf("\r\n GearBox Abs Position = %5.2f",GB.absPosition);
+			printf("\r\n GearBox Homing Position = %05d",posPts.homingPositionCnts);
 			printf("\r\n MotorEncoder Abs Position = %6.2f",encPos.absPosition);
 			printf("\r\n GearBox LOB Limit Disabled? = %01d",GB.overRideBounds);
 			printf("\r\n Enter -1 to exit");
