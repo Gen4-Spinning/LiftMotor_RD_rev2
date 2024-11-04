@@ -45,7 +45,7 @@ uint8_t checkHomingPosition(uint16_t homingPosCnts){
 	uint16_t cnts_12_percent = 0.12 * GB_ENCODER_SINGLE_ROTATION_IN_TIM3CNTS;
 	uint16_t cnts_13_percent = 0.13 * GB_ENCODER_SINGLE_ROTATION_IN_TIM3CNTS;
 
-	if ((homingPosCnts < cnts_12_percent) && (homingPosCnts > cnts_13_percent)){
+	if ((homingPosCnts < cnts_12_percent) || (homingPosCnts > cnts_13_percent)){
 		return 0;
 	}else{
 		return 1;

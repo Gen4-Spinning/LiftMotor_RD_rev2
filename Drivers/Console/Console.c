@@ -762,7 +762,7 @@ void configurationFromTerminal(void){
 		  printf("\r\n 11. Zero EncAbsPosition");
 		  printf("\r\n 12. Restart Motor Code");
 		  printf("\r\n 13. Enable Motor Logging");
-		  printf("\r\n Enter a no btw 1-12 and enter to select an option");
+		  printf("\r\n Enter a no btw 1-13 and enter to select an option");
 		  printf("\r\n Press -1 and enter from this menu to exit \r\n");
 		  firstTime = 0;
 	  }

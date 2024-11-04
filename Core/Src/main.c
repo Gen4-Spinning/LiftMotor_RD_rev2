@@ -719,7 +719,7 @@ int main(void)
   HAL_TIM_Encoder_Start_IT(&htim2,TIM_CHANNEL_ALL); //start the encoder
 
   //homing Position Setup
-  //manualWriteHomingPos = 1;
+ // manualWriteHomingPos = 1;
   if (manualWriteHomingPos){
 	  writeHomingPositionToEeprom(5915); // lift Left 5492 LR - 5915
  	  manualWriteHomingPos = 0;
